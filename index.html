@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fluid Dreams</title>
+    <title>Motion-Reactive Fluid Dreams</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { 
@@ -18,6 +18,13 @@
             top: 0;
             left: 0;
         }
+        #webcam {
+            position: fixed;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -29,6 +36,12 @@
     let attractionStrength = 0;
     let particles = [];
     const PARTICLE_COUNT = 300;
+    
+    // Video variables
+    let video;
+    let prevFrame;
+    let motionPoints = [];
+    const MOTION_THRESHOLD = 30;
     
     class Particle {
         constructor() {
@@ -58,25 +71,41 @@
             this.vx += cos(angleX) * flowForce;
             this.vy += sin(angleY) * flowForce;
             
-            let dx = mousePos.x - this.x;
-            let dy = mousePos.y - this.y;
-            let dist = sqrt(dx * dx + dy * dy);
+            // React to both mouse and motion points
+            let totalForceX = 0;
+            let totalForceY = 0;
             
-            let mouseSpeed = sqrt(mouseVelocity.x * mouseVelocity.x + mouseVelocity.y * mouseVelocity.y);
-            let influenceRadius = map(mouseSpeed, 0, 50, 150, 300);
+            // Mouse influence
+            let mdx = mousePos.x - this.x;
+            let mdy = mousePos.y - this.y;
+            let mouseDist = sqrt(mdx * mdx + mdy * mdy);
             
-            if (dist < influenceRadius) {
-                let force = map(dist, 0, influenceRadius, 1.2, 0) * attractionStrength;
-                force *= map(mouseSpeed, 0, 50, 0.5, 2);
-                
-                let turbulence = noise(this.x * 0.01, this.y * 0.01, t) * TWO_PI;
-                this.vx += (dx * force * 0.01 + cos(turbulence) * mouseSpeed * 0.1);
-                this.vy += (dy * force * 0.01 + sin(turbulence) * mouseSpeed * 0.1);
-                
-                let angle = atan2(dy, dx);
-                this.vx += cos(angle + PI/2) * force * 0.5;
-                this.vy += sin(angle + PI/2) * force * 0.5;
+            if (mouseDist < 200) {
+                let mouseForce = map(mouseDist, 0, 200, 1, 0) * attractionStrength;
+                totalForceX += mdx * mouseForce * 0.01;
+                totalForceY += mdy * mouseForce * 0.01;
             }
+            
+            // Motion points influence
+            motionPoints.forEach(point => {
+                let dx = point.x * width - this.x;
+                let dy = point.y * height - this.y;
+                let dist = sqrt(dx * dx + dy * dy);
+                
+                if (dist < 200) {
+                    let force = map(dist, 0, 200, 0.5, 0) * point.intensity;
+                    let angle = atan2(dy, dx);
+                    totalForceX += cos(angle) * force;
+                    totalForceY += sin(angle) * force;
+                    
+                    // Add some spiral effect for motion points
+                    totalForceX += cos(angle + PI/2) * force * 0.5;
+                    totalForceY += sin(angle + PI/2) * force * 0.5;
+                }
+            });
+            
+            this.vx += totalForceX;
+            this.vy += totalForceY;
             
             this.vx *= 0.93;
             this.vy *= 0.93;
@@ -84,40 +113,36 @@
             this.y += this.vy;
             
             if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
-                let side = floor(random(4));
-                switch(side) {
-                    case 0: this.x = random(width); this.y = 0; break;
-                    case 1: this.x = width; this.y = random(height); break;
-                    case 2: this.x = random(width); this.y = height; break;
-                    case 3: this.x = 0; this.y = random(height); break;
-                }
-                this.prevX = this.x;
-                this.prevY = this.y;
-                this.vx = random(-1, 1);
-                this.vy = random(-1, 1);
+                this.reset();
             }
         }
         
         draw() {
             let speed = sqrt(this.vx * this.vx + this.vy * this.vy);
             
-            let mouseDistance = dist(this.x, this.y, mousePos.x, mousePos.y);
-            let mouseInfluence = map(mouseDistance, 0, 200, 1, 0, true);
+            // Calculate influence from both mouse and motion points
+            let maxInfluence = 0;
+            let mouseDist = dist(this.x, this.y, mousePos.x, mousePos.y);
+            maxInfluence = max(maxInfluence, map(mouseDist, 0, 200, 1, 0, true));
+            
+            motionPoints.forEach(point => {
+                let d = dist(this.x, this.y, point.x * width, point.y * height);
+                maxInfluence = max(maxInfluence, map(d, 0, 200, point.intensity, 0, true));
+            });
             
             let alpha = map(speed, 0, 5, 30, 180);
-            alpha *= map(mouseDistance, 0, 200, 1.5, 1, true);
+            alpha *= map(maxInfluence, 0, 1, 1, 1.5);
             
             let length = map(speed, 0, 5, 2, 15);
-            length *= map(mouseDistance, 0, 200, 1.5, 1, true);
+            length *= map(maxInfluence, 0, 1, 1, 1.5);
             
-            let mouseSpeed = sqrt(mouseVelocity.x * mouseVelocity.x + mouseVelocity.y * mouseVelocity.y);
-            let hueShift = map(mouseSpeed, 0, 50, 0, 180);
+            let hueShift = map(maxInfluence, 0, 1, 0, 180);
             let hue = (this.baseHue + hueShift + t * 5) % 360;
             
-            let saturation = map(mouseDistance, 0, 200, 100, 80, true);
+            let saturation = map(maxInfluence, 0, 1, 80, 100);
             
             stroke(hue, saturation, 100, alpha);
-            strokeWeight(this.size * map(mouseDistance, 0, 200, 1.5, 1, true));
+            strokeWeight(this.size * map(maxInfluence, 0, 1, 1, 1.5));
             
             let angle = atan2(this.vy, this.vx);
             let endX = this.x - cos(angle) * length;
@@ -132,11 +157,54 @@
         mousePos = { x: windowWidth / 2, y: windowHeight / 2 };
         prevMousePos = { ...mousePos };
         
+        // Initialize particles
         for(let i = 0; i < PARTICLE_COUNT; i++) {
             particles.push(new Particle());
         }
         
+        // Initialize video
+        video = createCapture(VIDEO);
+        video.size(40, 30); // Low resolution for performance
+        video.hide();
+        
+        // Create initial previous frame
+        prevFrame = createImage(video.width, video.height);
         background(0);
+    }
+
+    function detectMotion() {
+        video.loadPixels();
+        prevFrame.loadPixels();
+        
+        motionPoints = [];
+        
+        // Sample points for motion
+        for(let y = 0; y < video.height; y += 2) {
+            for(let x = 0; x < video.width; x += 2) {
+                let i = (y * video.width + x) * 4;
+                
+                let currR = video.pixels[i];
+                let currG = video.pixels[i+1];
+                let currB = video.pixels[i+2];
+                
+                let prevR = prevFrame.pixels[i];
+                let prevG = prevFrame.pixels[i+1];
+                let prevB = prevFrame.pixels[i+2];
+                
+                let diff = dist(currR, currG, currB, prevR, prevG, prevB);
+                
+                if(diff > MOTION_THRESHOLD) {
+                    motionPoints.push({
+                        x: x / video.width,
+                        y: y / video.height,
+                        intensity: map(diff, MOTION_THRESHOLD, 100, 0, 1, true)
+                    });
+                }
+            }
+        }
+        
+        // Update previous frame
+        prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
     }
 
     function draw() {
@@ -149,6 +217,10 @@
         mouseVelocity.y = mousePos.y - prevMousePos.y;
         prevMousePos = { ...mousePos };
         
+        // Detect motion in video
+        detectMotion();
+        
+        // Update and draw particles
         particles.forEach(particle => {
             particle.update();
             particle.draw();
