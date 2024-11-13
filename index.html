@@ -233,15 +233,14 @@
         if (showPreview) {
             push();
             translate(width - video.width * 4 - 20, 60);
-            scale(-1, 1); // Mirror the preview
-            image(video, -video.width * 4, 0, video.width * 4, video.height * 4);
+            image(video, -video.width * 0, 0, video.width * 4, video.height * 4);
             
             // Draw motion points on preview
             motionPoints.forEach(point => {
                 noFill();
                 stroke(0, 255, 0);
                 ellipse(
-                    -point.x * video.width * 4, 
+                    point.x * video.width * 4, 
                     point.y * video.height * 4, 
                     10 * point.intensity, 
                     10 * point.intensity
