@@ -8,11 +8,15 @@
     <style>
         body { 
             margin: 0; 
+            padding: 0; 
             overflow: hidden; 
             background: black; 
         }
         canvas { 
             display: block; 
+            position: fixed;
+            top: 0;
+            left: 0;
         }
     </style>
 </head>
@@ -32,7 +36,7 @@
             this.vx = random(-1, 1);
             this.vy = random(-1, 1);
             this.size = random(1, 2.5);
-            this.baseHue = random(360); // Give each particle its own base hue
+            this.baseHue = random(360);
         }
         
         reset() {
@@ -46,7 +50,6 @@
             this.prevX = this.x;
             this.prevY = this.y;
             
-            // Base flow field movement
             let noiseScale = 0.002;
             let angleX = noise(this.x * noiseScale, this.y * noiseScale, t) * TWO_PI * 2;
             let angleY = noise(this.x * noiseScale, this.y * noiseScale, t + 1000) * TWO_PI * 2;
@@ -55,38 +58,31 @@
             this.vx += cos(angleX) * flowForce;
             this.vy += sin(angleY) * flowForce;
             
-            // Enhanced mouse interaction
             let dx = mousePos.x - this.x;
             let dy = mousePos.y - this.y;
             let dist = sqrt(dx * dx + dy * dy);
             
-            // Mouse influence radius increases with mouse speed
             let mouseSpeed = sqrt(mouseVelocity.x * mouseVelocity.x + mouseVelocity.y * mouseVelocity.y);
             let influenceRadius = map(mouseSpeed, 0, 50, 150, 300);
             
             if (dist < influenceRadius) {
-                // Stronger force when mouse is moving faster
                 let force = map(dist, 0, influenceRadius, 1.2, 0) * attractionStrength;
                 force *= map(mouseSpeed, 0, 50, 0.5, 2);
                 
-                // Add some turbulence based on mouse movement
                 let turbulence = noise(this.x * 0.01, this.y * 0.01, t) * TWO_PI;
                 this.vx += (dx * force * 0.01 + cos(turbulence) * mouseSpeed * 0.1);
                 this.vy += (dy * force * 0.01 + sin(turbulence) * mouseSpeed * 0.1);
                 
-                // Add some spiral effect
                 let angle = atan2(dy, dx);
                 this.vx += cos(angle + PI/2) * force * 0.5;
                 this.vy += sin(angle + PI/2) * force * 0.5;
             }
             
-            // Apply velocity with damping
             this.vx *= 0.93;
             this.vy *= 0.93;
             this.x += this.vx;
             this.y += this.vy;
             
-            // Smooth screen wrapping
             if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
                 let side = floor(random(4));
                 switch(side) {
@@ -105,24 +101,19 @@
         draw() {
             let speed = sqrt(this.vx * this.vx + this.vy * this.vy);
             
-            // Calculate distance to mouse for color variation
             let mouseDistance = dist(this.x, this.y, mousePos.x, mousePos.y);
             let mouseInfluence = map(mouseDistance, 0, 200, 1, 0, true);
             
-            // Dynamic alpha based on speed and mouse proximity
             let alpha = map(speed, 0, 5, 30, 180);
             alpha *= map(mouseDistance, 0, 200, 1.5, 1, true);
             
-            // Dynamic trail length based on speed and mouse proximity
             let length = map(speed, 0, 5, 2, 15);
             length *= map(mouseDistance, 0, 200, 1.5, 1, true);
             
-            // Color variation based on mouse movement
             let mouseSpeed = sqrt(mouseVelocity.x * mouseVelocity.x + mouseVelocity.y * mouseVelocity.y);
             let hueShift = map(mouseSpeed, 0, 50, 0, 180);
             let hue = (this.baseHue + hueShift + t * 5) % 360;
             
-            // Increase saturation near mouse
             let saturation = map(mouseDistance, 0, 200, 100, 80, true);
             
             stroke(hue, saturation, 100, alpha);
@@ -154,7 +145,6 @@
         t += 0.002;
         attractionStrength *= 0.95;
         
-        // Update mouse velocity
         mouseVelocity.x = mousePos.x - prevMousePos.x;
         mouseVelocity.y = mousePos.y - prevMousePos.y;
         prevMousePos = { ...mousePos };
