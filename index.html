@@ -18,16 +18,25 @@
             top: 0;
             left: 0;
         }
-        #webcam {
+        #debug-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            opacity: 0;
-            pointer-events: none;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            font-family: monospace;
+            border-radius: 5px;
+            z-index: 1000;
         }
     </style>
 </head>
 <body>
+    <div id="debug-overlay">
+        Motion Detected: <span id="motion-count">0</span>
+        <br>
+        <label><input type="checkbox" id="show-preview" onclick="togglePreview()"> Show Camera Preview</label>
+    </div>
     <script>
     let t = 0;
     let mousePos = { x: 0, y: 0 };
@@ -41,8 +50,12 @@
     let video;
     let prevFrame;
     let motionPoints = [];
-    const MOTION_THRESHOLD = 30;
+    let showPreview = false;
     
+    function togglePreview() {
+        showPreview = document.getElementById('show-preview').checked;
+    }
+
     class Particle {
         constructor() {
             this.reset();
@@ -71,7 +84,7 @@
             this.vx += cos(angleX) * flowForce;
             this.vy += sin(angleY) * flowForce;
             
-            // React to both mouse and motion points
+            // Calculate total force from both mouse and motion points
             let totalForceX = 0;
             let totalForceY = 0;
             
@@ -86,21 +99,21 @@
                 totalForceY += mdy * mouseForce * 0.01;
             }
             
-            // Motion points influence
+            // Motion points influence with enhanced force
             motionPoints.forEach(point => {
                 let dx = point.x * width - this.x;
                 let dy = point.y * height - this.y;
                 let dist = sqrt(dx * dx + dy * dy);
                 
                 if (dist < 200) {
-                    let force = map(dist, 0, 200, 0.5, 0) * point.intensity;
+                    let force = map(dist, 0, 200, 1.5, 0) * point.intensity * 2;
                     let angle = atan2(dy, dx);
                     totalForceX += cos(angle) * force;
                     totalForceY += sin(angle) * force;
                     
-                    // Add some spiral effect for motion points
-                    totalForceX += cos(angle + PI/2) * force * 0.5;
-                    totalForceY += sin(angle + PI/2) * force * 0.5;
+                    // Enhanced spiral effect
+                    totalForceX += cos(angle + PI/2) * force * 1.5;
+                    totalForceY += sin(angle + PI/2) * force * 1.5;
                 }
             });
             
@@ -177,8 +190,9 @@
         prevFrame.loadPixels();
         
         motionPoints = [];
+        let motionCount = 0;
         
-        // Sample points for motion
+        // Sample points for motion with increased sensitivity
         for(let y = 0; y < video.height; y += 2) {
             for(let x = 0; x < video.width; x += 2) {
                 let i = (y * video.width + x) * 4;
@@ -193,15 +207,20 @@
                 
                 let diff = dist(currR, currG, currB, prevR, prevG, prevB);
                 
-                if(diff > MOTION_THRESHOLD) {
+                // More sensitive threshold
+                if(diff > 20) {
                     motionPoints.push({
                         x: x / video.width,
                         y: y / video.height,
-                        intensity: map(diff, MOTION_THRESHOLD, 100, 0, 1, true)
+                        intensity: map(diff, 20, 100, 0.5, 2, true)
                     });
+                    motionCount++;
                 }
             }
         }
+        
+        // Update debug overlay
+        document.getElementById('motion-count').textContent = motionCount;
         
         // Update previous frame
         prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
@@ -210,17 +229,51 @@
     function draw() {
         background(0, 0, 0, 15);
         
+        // Show camera preview if enabled
+        if (showPreview) {
+            push();
+            translate(width - video.width * 4 - 20, 60);
+            scale(-1, 1); // Mirror the preview
+            image(video, -video.width * 4, 0, video.width * 4, video.height * 4);
+            
+            // Draw motion points on preview
+            motionPoints.forEach(point => {
+                noFill();
+                stroke(0, 255, 0);
+                ellipse(
+                    -point.x * video.width * 4, 
+                    point.y * video.height * 4, 
+                    10 * point.intensity, 
+                    10 * point.intensity
+                );
+            });
+            pop();
+        }
+
         t += 0.002;
         attractionStrength *= 0.95;
+        
+        // Add energy particles at motion points
+        motionPoints.forEach(point => {
+            if (random() < 0.3) {
+                let particle = new Particle();
+                particle.x = point.x * width;
+                particle.y = point.y * height;
+                particle.vx = random(-5, 5) * point.intensity;
+                particle.vy = random(-5, 5) * point.intensity;
+                particles.push(particle);
+                if (particles.length > PARTICLE_COUNT) {
+                    particles.shift();
+                }
+            }
+        });
         
         mouseVelocity.x = mousePos.x - prevMousePos.x;
         mouseVelocity.y = mousePos.y - prevMousePos.y;
         prevMousePos = { ...mousePos };
         
-        // Detect motion in video
         detectMotion();
         
-        // Update and draw particles
         particles.forEach(particle => {
             particle.update();
             particle.draw();
