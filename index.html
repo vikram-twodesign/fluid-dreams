@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motion-Reactive Fluid Dreams</title>
+    <title>Motion Game Prototype</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { 
@@ -30,192 +30,50 @@
             z-index: 1000;
             font-size: 12px;
         }
-        @media (max-width: 768px) {
-            #debug-overlay {
-                top: 5px;
-                right: 5px;
-                padding: 5px;
-                font-size: 10px;
-            }
+        #motion-grid {
+            position: fixed;
+            top: 60px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 8px;
+            border-radius: 5px;
         }
     </style>
 </head>
 <body>
     <div id="debug-overlay">
-        Motion: <span id="motion-count">0</span>
+        Motion Points: <span id="motion-count">0</span>
         <br>
-        <label><input type="checkbox" id="show-preview" onclick="togglePreview()"> Preview</label>
+        <label><input type="checkbox" id="show-preview" checked onclick="togglePreview()"> Show Debug</label>
     </div>
     <script>
-    let t = 0;
-    let mousePos = { x: 0, y: 0 };
-    let prevMousePos = { x: 0, y: 0 };
-    let mouseVelocity = { x: 0, y: 0 };
-    let attractionStrength = 0;
-    let particles = [];
-    let isMobile = false;
-    
-    // Responsive particle counts and settings
-    const PARTICLE_COUNT = {
-        mobile: 150,    // Reduced particles for mobile
-        desktop: 300
-    };
-    
-    const SETTINGS = {
-        mobile: {
-            trailLength: 0.7,    // Shorter trails on mobile
-            particleSize: 0.8,   // Smaller particles
-            fadeSpeed: 20,       // Faster fade
-            motionForce: 1.5     // Slightly reduced force
-        },
-        desktop: {
-            trailLength: 1,
-            particleSize: 1,
-            fadeSpeed: 15,
-            motionForce: 2
-        }
-    };
-    
-    // Video variables
     let video;
     let prevFrame;
     let motionPoints = [];
-    let showPreview = false;
+    let showPreview = true;
+    let gridSize = 16; // Divides screen into a 16x16 grid for motion detection
+    let motionGrid = [];
+    let motionThreshold = 25; // Adjusted threshold for motion detection
     
     function togglePreview() {
         showPreview = document.getElementById('show-preview').checked;
     }
 
-    class Particle {
-        constructor() {
-            this.reset();
-            this.vx = random(-1, 1);
-            this.vy = random(-1, 1);
-            this.size = random(1, 2.5) * (isMobile ? SETTINGS.mobile.particleSize : SETTINGS.desktop.particleSize);
-            this.baseHue = random(360);
-        }
-        
-        reset() {
-            this.x = random(width);
-            this.y = random(height);
-            this.prevX = this.x;
-            this.prevY = this.y;
-        }
-        
-        update() {
-            this.prevX = this.x;
-            this.prevY = this.y;
-            
-            let noiseScale = 0.002;
-            let angleX = noise(this.x * noiseScale, this.y * noiseScale, t) * TWO_PI * 2;
-            let angleY = noise(this.x * noiseScale, this.y * noiseScale, t + 1000) * TWO_PI * 2;
-            
-            let flowForce = 0.3;
-            this.vx += cos(angleX) * flowForce;
-            this.vy += sin(angleY) * flowForce;
-            
-            let totalForceX = 0;
-            let totalForceY = 0;
-            
-            let mdx = mousePos.x - this.x;
-            let mdy = mousePos.y - this.y;
-            let mouseDist = sqrt(mdx * mdx + mdy * mdy);
-            
-            if (mouseDist < 200) {
-                let mouseForce = map(mouseDist, 0, 200, 1, 0) * attractionStrength;
-                totalForceX += mdx * mouseForce * 0.01;
-                totalForceY += mdy * mouseForce * 0.01;
-            }
-            
-            // Adjusted motion influence for mobile
-            let motionForce = isMobile ? SETTINGS.mobile.motionForce : SETTINGS.desktop.motionForce;
-            
-            motionPoints.forEach(point => {
-                let dx = (1 - point.x) * width - this.x;
-                let dy = point.y * height - this.y;
-                let dist = sqrt(dx * dx + dy * dy);
-                
-                if (dist < (isMobile ? 150 : 200)) {
-                    let force = map(dist, 0, isMobile ? 150 : 200, 1.5, 0) * point.intensity * motionForce;
-                    let angle = atan2(dy, dx);
-                    totalForceX += cos(angle) * force;
-                    totalForceY += sin(angle) * force;
-                    
-                    totalForceX += cos(angle + PI/2) * force * (isMobile ? 1 : 1.5);
-                    totalForceY += sin(angle + PI/2) * force * (isMobile ? 1 : 1.5);
-                }
-            });
-            
-            this.vx += totalForceX;
-            this.vy += totalForceY;
-            
-            this.vx *= 0.93;
-            this.vy *= 0.93;
-            this.x += this.vx;
-            this.y += this.vy;
-            
-            if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
-                this.reset();
-            }
-        }
-        
-        draw() {
-            let speed = sqrt(this.vx * this.vx + this.vy * this.vy);
-            
-            let maxInfluence = 0;
-            let mouseDist = dist(this.x, this.y, mousePos.x, mousePos.y);
-            maxInfluence = max(maxInfluence, map(mouseDist, 0, 200, 1, 0, true));
-            
-            motionPoints.forEach(point => {
-                let d = dist(this.x, this.y, point.x * width, point.y * height);
-                maxInfluence = max(maxInfluence, map(d, 0, 200, point.intensity, 0, true));
-            });
-            
-            let settings = isMobile ? SETTINGS.mobile : SETTINGS.desktop;
-            
-            let alpha = map(speed, 0, 5, 30, 180);
-            alpha *= map(maxInfluence, 0, 1, 1, 1.5);
-            
-            let length = map(speed, 0, 5, 2, 15) * settings.trailLength;
-            length *= map(maxInfluence, 0, 1, 1, 1.5);
-            
-            let hueShift = map(maxInfluence, 0, 1, 0, 180);
-            let hue = (this.baseHue + hueShift + t * 5) % 360;
-            
-            let saturation = map(maxInfluence, 0, 1, 80, 100);
-            
-            stroke(hue, saturation, 100, alpha);
-            strokeWeight(this.size * map(maxInfluence, 0, 1, 1, 1.5));
-            
-            let angle = atan2(this.vy, this.vx);
-            let endX = this.x - cos(angle) * length;
-            let endY = this.y - sin(angle) * length;
-            line(this.x, this.y, endX, endY);
-        }
-    }
-    
     function setup() {
         createCanvas(windowWidth, windowHeight);
-        colorMode(HSB, 360, 100, 100, 255);
         
-        // Check if mobile
-        isMobile = windowWidth < 768;
-        
-        mousePos = { x: windowWidth / 2, y: windowHeight / 2 };
-        prevMousePos = { ...mousePos };
-        
-        // Initialize particles based on device type
-        const particleCount = isMobile ? PARTICLE_COUNT.mobile : PARTICLE_COUNT.desktop;
-        for(let i = 0; i < particleCount; i++) {
-            particles.push(new Particle());
-        }
-        
-        // Initialize video with mobile-optimized size
+        // Initialize video capture
         video = createCapture(VIDEO);
-        video.size(isMobile ? 30 : 40, isMobile ? 20 : 30);
+        video.size(32, 24); // Lower resolution for faster processing
         video.hide();
         
         prevFrame = createImage(video.width, video.height);
+        
+        // Initialize motion grid
+        for(let i = 0; i < gridSize; i++) {
+            motionGrid[i] = new Array(gridSize).fill(0);
+        }
+        
         background(0);
     }
 
@@ -223,12 +81,17 @@
         video.loadPixels();
         prevFrame.loadPixels();
         
+        // Reset motion grid
+        for(let i = 0; i < gridSize; i++) {
+            motionGrid[i].fill(0);
+        }
+        
         motionPoints = [];
         let motionCount = 0;
         
-        // Sample points for motion with increased sensitivity
-        for(let y = 0; y < video.height; y += 2) {
-            for(let x = 0; x < video.width; x += 2) {
+        // Sample video pixels and map to grid
+        for(let y = 0; y < video.height; y++) {
+            for(let x = 0; x < video.width; x++) {
                 let i = (y * video.width + x) * 4;
                 
                 let currR = video.pixels[i];
@@ -241,12 +104,19 @@
                 
                 let diff = dist(currR, currG, currB, prevR, prevG, prevB);
                 
-                // More sensitive threshold
-                if(diff > (isMobile ? 15 : 20)) {  // More sensitive on mobile
+                if(diff > motionThreshold) {
+                    // Map video coordinates to grid coordinates
+                    let gridX = floor(map(x, 0, video.width, 0, gridSize));
+                    let gridY = floor(map(y, 0, video.height, 0, gridSize));
+                    
+                    // Increment motion value in grid
+                    motionGrid[gridY][gridX] += diff / 100;
+                    
+                    // Add to motion points for visualization
                     motionPoints.push({
                         x: x / video.width,
                         y: y / video.height,
-                        intensity: map(diff, isMobile ? 15 : 20, 100, 0.5, 2, true)
+                        intensity: map(diff, motionThreshold, 100, 0.5, 1, true)
                     });
                     motionCount++;
                 }
@@ -261,77 +131,59 @@
     }
 
     function draw() {
-        let settings = isMobile ? SETTINGS.mobile : SETTINGS.desktop;
-        background(0, 0, 0, settings.fadeSpeed);
+        background(0, 0, 0, 25);
         
-        // Show camera preview if enabled
+        detectMotion();
+        
         if (showPreview) {
+            // Draw video preview
             push();
-            translate(width - video.width * 4 - 20, 60);
-            image(video, 0, 0, video.width * 4, video.height * 4);
+            translate(width - 160 - 20, 60);
+            image(video, 0, 0, 160, 120);
             
-            // Draw motion points on preview
+            // Draw motion points overlay
             motionPoints.forEach(point => {
                 noFill();
                 stroke(0, 255, 0);
                 ellipse(
-                    point.x * video.width * 4, 
-                    point.y * video.height * 4, 
-                    10 * point.intensity, 
-                    10 * point.intensity
+                    point.x * 160, 
+                    point.y * 120, 
+                    5 * point.intensity, 
+                    5 * point.intensity
                 );
             });
             pop();
+            
+            // Draw motion grid visualization
+            drawMotionGrid();
         }
+    }
 
-        t += 0.002;
-        attractionStrength *= 0.95;
+    function drawMotionGrid() {
+        // Draw grid visualization
+        let cellWidth = width / gridSize;
+        let cellHeight = height / gridSize;
         
-        // Add energy particles at motion points
-        motionPoints.forEach(point => {
-            if (random() < (isMobile ? 0.2 : 0.3)) {  // Less frequent on mobile
-                let particle = new Particle();
-                particle.x = point.x * width;
-                particle.y = point.y * height;
-                particle.vx = random(-5, 5) * point.intensity;
-                particle.vy = random(-5, 5) * point.intensity;
-                particles.push(particle);
-                if (particles.length > (isMobile ? PARTICLE_COUNT.mobile : PARTICLE_COUNT.desktop)) {
-                    particles.shift();
+        noFill();
+        for(let y = 0; y < gridSize; y++) {
+            for(let x = 0; x < gridSize; x++) {
+                let motionValue = motionGrid[y][x];
+                if(motionValue > 0) {
+                    fill(0, 255, 0, motionValue * 50);
+                    noStroke();
+                    rect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
                 }
+                
+                // Grid lines
+                stroke(255, 30);
+                noFill();
+                rect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
             }
-        });
-        
-        mouseVelocity.x = mousePos.x - prevMousePos.x;
-        mouseVelocity.y = mousePos.y - prevMousePos.y;
-        prevMousePos = { ...mousePos };
-        
-        detectMotion();
-        
-        particles.forEach(particle => {
-            particle.update();
-            particle.draw();
-        });
-    }
-
-    function mouseMoved() {
-        mousePos.x = mouseX;
-        mousePos.y = mouseY;
-        attractionStrength = 1;
-        return false;
-    }
-
-    function touchMoved(event) {
-        event.preventDefault();
-        mousePos.x = touches[0].x;
-        mousePos.y = touches[0].y;
-        attractionStrength = 1;
-        return false;
+        }
     }
 
     function windowResized() {
         resizeCanvas(windowWidth, windowHeight);
-        isMobile = windowWidth < 768;  // Update mobile status on resize
     }
     </script>
 </body>
