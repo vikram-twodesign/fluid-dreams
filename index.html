@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motion Game Prototype</title>
+    <title>Bubble Pop Motion Game</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { 
@@ -14,9 +14,16 @@
         }
         canvas { 
             display: block; 
+        }
+        #game-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
+            top: 10px;
+            left: 10px;
+            color: white;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 24px;
+            z-index: 1000;
         }
         #debug-overlay {
             position: fixed;
@@ -30,41 +37,162 @@
             z-index: 1000;
             font-size: 12px;
         }
-        #motion-grid {
-            position: fixed;
-            top: 60px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            padding: 8px;
-            border-radius: 5px;
-        }
     </style>
 </head>
 <body>
+    <div id="game-overlay">Score: <span id="score">0</span></div>
     <div id="debug-overlay">
-        Motion Points: <span id="motion-count">0</span>
-        <br>
-        <label><input type="checkbox" id="show-preview" checked onclick="togglePreview()"> Show Debug</label>
+        <label><input type="checkbox" id="show-debug" onclick="toggleDebug()"> Debug View</label>
     </div>
     <script>
     let video;
     let prevFrame;
-    let motionPoints = [];
-    let showPreview = true;
-    let gridSize = 16; // Divides screen into a 16x16 grid for motion detection
     let motionGrid = [];
-    let motionThreshold = 25; // Adjusted threshold for motion detection
-    
-    function togglePreview() {
-        showPreview = document.getElementById('show-preview').checked;
+    let gridSize = 16;
+    let motionThreshold = 25;
+    let showDebug = false;
+    let score = 0;
+    let bubbles = [];
+    let popEffects = [];
+
+    class Bubble {
+        constructor(type = 'regular') {
+            this.reset();
+            this.type = type;
+            this.points = type === 'golden' ? 5 : 1;
+            this.baseHue = type === 'golden' ? 50 : random(360);
+            this.phase = random(TWO_PI);
+            this.popProgress = -1; // -1 means not popping
+        }
+
+        reset() {
+            this.x = random(width * 0.1, width * 0.9);
+            this.y = random(height * 0.1, height * 0.9);
+            this.size = random(30, 50);
+            this.oscillation = 0;
+            this.lifetime = 255;
+        }
+
+        update() {
+            if (this.popProgress >= 0) {
+                // Update pop animation
+                this.popProgress += 0.1;
+                if (this.popProgress > 1) {
+                    return false; // Remove bubble
+                }
+            } else {
+                // Normal bubble update
+                this.oscillation += 0.05;
+                this.lifetime -= 0.5;
+                
+                // Check for motion collision
+                let gridX = floor(map(this.x, 0, width, 0, gridSize));
+                let gridY = floor(map(this.y, 0, height, 0, gridSize));
+                
+                if (gridX >= 0 && gridX < gridSize && gridY >= 0 && gridY < gridSize) {
+                    if (motionGrid[gridY][gridX] > 0.5) {
+                        this.pop();
+                        score += this.points;
+                        document.getElementById('score').textContent = score;
+                    }
+                }
+                
+                if (this.lifetime <= 0) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        pop() {
+            this.popProgress = 0;
+            // Create pop effect particles
+            for (let i = 0; i < 8; i++) {
+                let angle = (i / 8) * TWO_PI;
+                popEffects.push(new PopParticle(this.x, this.y, angle, this.baseHue));
+            }
+        }
+
+        draw() {
+            push();
+            if (this.popProgress >= 0) {
+                // Draw pop animation
+                let expandSize = this.size * (1 + this.popProgress * 2);
+                noFill();
+                stroke(this.baseHue, 80, 100, (1 - this.popProgress) * 255);
+                strokeWeight(2 * (1 - this.popProgress));
+                circle(this.x, this.y, expandSize);
+            } else {
+                // Draw normal bubble
+                let wobble = sin(this.oscillation + this.phase) * 2;
+                
+                // Create shimmering effect
+                for (let i = 0; i < 3; i++) {
+                    let alpha = map(i, 0, 2, 255, 100) * (this.lifetime / 255);
+                    fill(this.baseHue, 80 - i * 20, 100, alpha * 0.5);
+                    noStroke();
+                    
+                    // Draw organic bubble shape using sine waves
+                    beginShape();
+                    for (let a = 0; a < TWO_PI; a += 0.2) {
+                        let r = this.size + sin(a * 3 + this.oscillation) * wobble;
+                        let x = this.x + cos(a) * r;
+                        let y = this.y + sin(a) * r;
+                        curveVertex(x, y);
+                    }
+                    endShape(CLOSE);
+                }
+                
+                // Add highlight
+                fill(this.baseHue, 20, 100, this.lifetime * 0.4);
+                let highlightSize = this.size * 0.3;
+                ellipse(
+                    this.x - this.size * 0.2,
+                    this.y - this.size * 0.2,
+                    highlightSize,
+                    highlightSize
+                );
+            }
+            pop();
+        }
+    }
+
+    class PopParticle {
+        constructor(x, y, angle, hue) {
+            this.x = x;
+            this.y = y;
+            this.vx = cos(angle) * random(2, 5);
+            this.vy = sin(angle) * random(2, 5);
+            this.life = 1;
+            this.hue = hue;
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vy += 0.1; // gravity
+            this.life -= 0.02;
+            return this.life > 0;
+        }
+
+        draw() {
+            noStroke();
+            fill(this.hue, 80, 100, this.life * 255);
+            circle(this.x, this.y, 4 * this.life);
+        }
+    }
+
+    function toggleDebug() {
+        showDebug = document.getElementById('show-debug').checked;
     }
 
     function setup() {
         createCanvas(windowWidth, windowHeight);
+        colorMode(HSB, 360, 100, 100, 255);
         
         // Initialize video capture
         video = createCapture(VIDEO);
-        video.size(32, 24); // Lower resolution for faster processing
+        video.size(32, 24);
         video.hide();
         
         prevFrame = createImage(video.width, video.height);
@@ -73,8 +201,6 @@
         for(let i = 0; i < gridSize; i++) {
             motionGrid[i] = new Array(gridSize).fill(0);
         }
-        
-        background(0);
     }
 
     function detectMotion() {
@@ -85,9 +211,6 @@
         for(let i = 0; i < gridSize; i++) {
             motionGrid[i].fill(0);
         }
-        
-        motionPoints = [];
-        let motionCount = 0;
         
         // Sample video pixels and map to grid
         for(let y = 0; y < video.height; y++) {
@@ -106,79 +229,67 @@
                 
                 if(diff > motionThreshold) {
                     // Map video coordinates to grid coordinates
-                    let gridX = floor(map(x, 0, video.width, 0, gridSize));
+                    // Note: width - x to flip horizontally
+                    let gridX = floor(map(video.width - x, 0, video.width, 0, gridSize));
                     let gridY = floor(map(y, 0, video.height, 0, gridSize));
                     
-                    // Increment motion value in grid
-                    motionGrid[gridY][gridX] += diff / 100;
-                    
-                    // Add to motion points for visualization
-                    motionPoints.push({
-                        x: x / video.width,
-                        y: y / video.height,
-                        intensity: map(diff, motionThreshold, 100, 0.5, 1, true)
-                    });
-                    motionCount++;
+                    if(gridX >= 0 && gridX < gridSize && gridY >= 0 && gridY < gridSize) {
+                        motionGrid[gridY][gridX] += diff / 100;
+                    }
                 }
             }
         }
-        
-        // Update debug overlay
-        document.getElementById('motion-count').textContent = motionCount;
         
         // Update previous frame
         prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
     }
 
     function draw() {
-        background(0, 0, 0, 25);
+        background(0, 0, 0, 20);
         
         detectMotion();
         
-        if (showPreview) {
+        // Randomly add new bubbles
+        if (random() < 0.05 && bubbles.length < 10) {
+            bubbles.push(new Bubble(random() < 0.2 ? 'golden' : 'regular'));
+        }
+        
+        // Update and draw bubbles
+        bubbles = bubbles.filter(bubble => {
+            let alive = bubble.update();
+            if (alive) bubble.draw();
+            return alive;
+        });
+        
+        // Update and draw pop effects
+        popEffects = popEffects.filter(effect => {
+            let alive = effect.update();
+            if (alive) effect.draw();
+            return alive;
+        });
+        
+        if (showDebug) {
+            // Draw motion grid for debugging
+            let cellWidth = width / gridSize;
+            let cellHeight = height / gridSize;
+            
+            for(let y = 0; y < gridSize; y++) {
+                for(let x = 0; x < gridSize; x++) {
+                    let motionValue = motionGrid[y][x];
+                    if(motionValue > 0) {
+                        fill(120, 100, 100, motionValue * 50);
+                        noStroke();
+                        rect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
+                    }
+                }
+            }
+            
             // Draw video preview
             push();
             translate(width - 160 - 20, 60);
-            image(video, 0, 0, 160, 120);
-            
-            // Draw motion points overlay
-            motionPoints.forEach(point => {
-                noFill();
-                stroke(0, 255, 0);
-                ellipse(
-                    point.x * 160, 
-                    point.y * 120, 
-                    5 * point.intensity, 
-                    5 * point.intensity
-                );
-            });
+            scale(-1, 1); // Flip preview horizontally
+            image(video, -160, 0, 160, 120);
             pop();
-            
-            // Draw motion grid visualization
-            drawMotionGrid();
-        }
-    }
-
-    function drawMotionGrid() {
-        // Draw grid visualization
-        let cellWidth = width / gridSize;
-        let cellHeight = height / gridSize;
-        
-        noFill();
-        for(let y = 0; y < gridSize; y++) {
-            for(let x = 0; x < gridSize; x++) {
-                let motionValue = motionGrid[y][x];
-                if(motionValue > 0) {
-                    fill(0, 255, 0, motionValue * 50);
-                    noStroke();
-                    rect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
-                }
-                
-                // Grid lines
-                stroke(255, 30);
-                noFill();
-                rect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
-            }
         }
     }
 
